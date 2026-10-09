@@ -510,7 +510,8 @@ export function Settings() {
 
   return (
     <>
-      <PageHeader title={tabs.find(([k]) => k === key)![1]} back={{ to: "/settings/store", label: "Settings" }} />
+      <div className="mx-auto w-full max-w-5xl">
+      <PageHeader title={tabs.find(([k]) => k === key)![1]} />
       <div className="grid gap-5">
         <nav aria-label="Settings sections" className="-mx-4 flex gap-1 overflow-x-auto px-4 lg:hidden">
           {tabs.map(([k, label]) => (
@@ -519,7 +520,8 @@ export function Settings() {
             </NavLink>
           ))}
         </nav>
-        <div key={key} className="min-w-0 max-w-5xl">{view[key]}</div>
+        <div key={key} className="min-w-0">{view[key]}</div>
+      </div>
       </div>
     </>
   );
