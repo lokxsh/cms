@@ -160,46 +160,95 @@ function StoreTab() {
   );
 }
 
+type Zone = StoreSettings["zones"][number];
+
 function ShippingTab() {
-  const zones = useDraft("zones");
-  const carriers = useDraft("carriers");
-  const dirty = zones.dirty || carriers.dirty;
-  const setZone = (id: string, p: Partial<StoreSettings["zones"][number]>) => zones.setDraft(zones.draft.map((z) => (z.id === id ? { ...z, ...p } : z)));
-  const numOrNull = (v: string) => (v === "" ? null : Number(v.replace(/\D/g, "")));
+  const zones = useStore((s) => s.settings.zones);
+  const carriers = useStore((s) => s.settings.carriers);
+  const update = useStore((s) => s.updateSettings);
+  const toast = useStore((s) => s.toast);
+  const [edit, setEdit] = useState<Zone | null>(null);
+  const [err, setErr] = useState<Record<string, string>>({});
+  const [del, setDel] = useState<Zone | null>(null);
   const sym = currencySymbol();
+  const isNew = edit && !zones.some((z) => z.id === edit.id);
+  const enabled = carriers.filter((c) => c.enabled);
+  const num = (v: string) => Number(v.replace(/\D/g, ""));
+  const numOrNull = (v: string) => (v.trim() === "" ? null : num(v));
+
+  const save = () => {
+    if (!edit) return;
+    const e: Record<string, string> = {};
+    if (!edit.name.trim()) e.name = "Name the zone, e.g. Gulf (GCC).";
+    if (!edit.regions.trim()) e.regions = "List the countries or regions it covers.";
+    if (!/^\d+(-\d+)?$/.test(edit.days.trim())) e.days = "Use a number or a range, e.g. 2-3.";
+    setErr(e);
+    if (Object.keys(e).length) return;
+    update({ zones: isNew ? [...zones, edit] : zones.map((z) => (z.id === edit.id ? edit : z)) });
+    toast(isNew ? `${edit.name} zone added` : `${edit.name} zone saved`);
+    setEdit(null);
+  };
+
   return (
     <>
-      <Panel title="Shipping zones" description="All shipments go out insured. Free shipping applies once the order crosses the threshold." actions={<Button size="sm" icon={Plus} onClick={() => zones.setDraft([...zones.draft, { id: `z${Date.now()}`, name: "New zone", regions: "", standard: 35, express: null, freeAbove: 400, days: "3-5", carrier: "DHL Express" }])}>Add zone</Button>} bodyClass="">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead><tr className="bg-surface-2"><th className={th}>Zone</th><th className={th}>Courier</th><th className={th}>Standard</th><th className={th}>Express</th><th className={th}>Free above</th><th className={th}>Days</th><th className={th}></th></tr></thead>
-            <tbody>
-              {zones.draft.map((z) => (
-                <tr key={z.id} className="border-t border-line align-top">
-                  <td className="px-3 py-3 first:pl-4">
-                    <Input aria-label="Zone name" value={z.name} onChange={(e) => setZone(z.id, { name: e.target.value })} className="font-medium" />
-                    <Input aria-label="Regions" value={z.regions} placeholder="Countries or regions" onChange={(e) => setZone(z.id, { regions: e.target.value })} className="mt-1.5 text-[12px] text-muted" />
-                  </td>
-                  <td className="w-48 px-3 py-3"><Select aria-label="Courier" value={z.carrier} onChange={(e) => setZone(z.id, { carrier: e.target.value })}>{carriers.draft.map((c) => <option key={c.name}>{c.name}</option>)}</Select></td>
-                  <td className="w-28 px-3 py-3"><Input aria-label="Standard rate" prefix={sym} className="num" value={z.standard} onChange={(e) => setZone(z.id, { standard: Number(e.target.value.replace(/\D/g, "")) })} /></td>
-                  <td className="w-28 px-3 py-3"><Input aria-label="Express rate" prefix={sym} className="num" placeholder="Off" value={z.express ?? ""} onChange={(e) => setZone(z.id, { express: numOrNull(e.target.value) })} /></td>
-                  <td className="w-32 px-3 py-3"><Input aria-label="Free shipping threshold" prefix={sym} className="num" placeholder="Never" value={z.freeAbove ?? ""} onChange={(e) => setZone(z.id, { freeAbove: numOrNull(e.target.value) })} /></td>
-                  <td className="w-24 px-3 py-3"><Input aria-label="Delivery days" className="num" value={z.days} onChange={(e) => setZone(z.id, { days: e.target.value })} /></td>
-                  <td className="px-3 py-3 pr-4"><IconButton icon={Trash} label="Delete zone" size={14} className="hover:text-bad" onClick={() => zones.setDraft(zones.draft.filter((x) => x.id !== z.id))} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <Panel
+        title="Shipping zones"
+        description="Every shipment goes out insured. Free shipping applies once the order total reaches the threshold."
+        actions={<Button size="sm" icon={Plus} onClick={() => { setErr({}); setEdit({ id: `z${Date.now()}`, name: "", regions: "", standard: 35, express: 55, freeAbove: 400, days: "3-5", carrier: enabled[0]?.name ?? "DHL Express" }); }}>Add zone</Button>}
+        bodyClass=""
+      >
+        <ul>
+          {zones.map((z) => (
+            <li key={z.id} className="grid gap-3 border-t border-line px-4 py-4 first:border-0 xl:grid-cols-[minmax(0,1fr)_340px_auto] xl:items-center">
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold">{z.name}</div>
+                <div className="mt-0.5 line-clamp-2 text-[12.5px] text-muted">{z.regions}</div>
+                <div className="mt-1.5 text-[12.5px] text-ink-2">{z.carrier} · <span className="num">{z.days}</span> days</div>
+              </div>
+              <dl className="grid max-w-md grid-cols-3 gap-x-6 gap-y-1 text-[12.5px] [&_dt]:whitespace-nowrap">
+                <div><dt className="text-muted">Standard</dt><dd className="num mt-0.5 text-[14px] font-medium">{z.standard ? money(z.standard) : "Free"}</dd></div>
+                <div><dt className="text-muted">Express</dt><dd className="num mt-0.5 text-[14px] font-medium">{z.express === null ? <span className="text-faint">Off</span> : money(z.express)}</dd></div>
+                <div><dt className="text-muted">Free over</dt><dd className="num mt-0.5 text-[14px] font-medium">{z.freeAbove === null ? <span className="text-faint">Never</span> : money(z.freeAbove)}</dd></div>
+              </dl>
+              <div className="flex gap-1 xl:justify-end">
+                <Button size="sm" icon={PencilSimple} onClick={() => { setErr({}); setEdit({ ...z }); }}>Edit</Button>
+                <IconButton icon={Trash} label={`Delete ${z.name}`} size={14} className="hover:text-bad" onClick={() => setDel(z)} />
+              </div>
+            </li>
+          ))}
+          {zones.length === 0 && <li className="px-4 py-10 text-center text-[13px] text-muted">No zones yet. Add one so clients can check out.</li>}
+        </ul>
       </Panel>
-      <Panel title="Couriers" className="mt-4">
-        {carriers.draft.map((c) => (
-          <Row key={c.name} label={c.name} hint={c.enabled ? "Available when shipping an order" : "Not used"}>
-            <Toggle label={c.name} checked={c.enabled} onChange={(v) => carriers.setDraft(carriers.draft.map((x) => (x.name === c.name ? { ...x, enabled: v } : x)))} />
+
+      <Panel title="Couriers" description="Only switched-on couriers can be picked for a zone or when shipping an order." className="mt-4">
+        {carriers.map((c) => (
+          <Row key={c.name} label={c.name} hint={`${zones.filter((z) => z.carrier === c.name).length} zones use it`}>
+            <Toggle label={c.name} checked={c.enabled} onChange={(v) => { update({ carriers: carriers.map((x) => (x.name === c.name ? { ...x, enabled: v } : x)) }); toast(`${c.name} ${v ? "switched on" : "switched off"}`); }} />
           </Row>
         ))}
       </Panel>
-      <SaveBar dirty={dirty} onSave={() => { zones.save("Shipping saved"); carriers.save("Shipping saved"); }} onReset={() => { zones.reset(); carriers.reset(); }} />
+
+      <Drawer open={!!edit} onClose={() => setEdit(null)} title={isNew ? "Add shipping zone" : `Edit ${edit?.name}`} footer={<><Button onClick={() => setEdit(null)}>Cancel</Button><Button variant="primary" onClick={save}>{isNew ? "Add zone" : "Save zone"}</Button></>}>
+        {edit && (
+          <div className="flex flex-col gap-4">
+            <Field label="Zone name" htmlFor="z-name" error={err.name}><Input id="z-name" value={edit.name} aria-invalid={!!err.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+            <Field label="Countries or regions" htmlFor="z-reg" error={err.regions} hint="Separate with commas"><Textarea id="z-reg" value={edit.regions} aria-invalid={!!err.regions} onChange={(e) => setEdit({ ...edit, regions: e.target.value })} className="min-h-16" /></Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Courier" htmlFor="z-car"><Select id="z-car" value={edit.carrier} onChange={(e) => setEdit({ ...edit, carrier: e.target.value })}>{carriers.map((c) => <option key={c.name} value={c.name} disabled={!c.enabled}>{c.name}{c.enabled ? "" : " (off)"}</option>)}</Select></Field>
+              <Field label="Delivery time" htmlFor="z-days" error={err.days}><Input id="z-days" className="num" suffix="days" value={edit.days} aria-invalid={!!err.days} onChange={(e) => setEdit({ ...edit, days: e.target.value })} /></Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Standard rate" htmlFor="z-std" hint="0 for always free"><Input id="z-std" prefix={sym} inputMode="numeric" className="num" value={edit.standard} onChange={(e) => setEdit({ ...edit, standard: num(e.target.value) })} /></Field>
+              <Field label="Express rate" htmlFor="z-exp" hint="Empty to turn express off"><Input id="z-exp" prefix={sym} inputMode="numeric" className="num" value={edit.express ?? ""} onChange={(e) => setEdit({ ...edit, express: numOrNull(e.target.value) })} /></Field>
+            </div>
+            <Field label="Free shipping when the order is over" htmlFor="z-free" hint="Empty for never"><Input id="z-free" prefix={sym} inputMode="numeric" className="num" value={edit.freeAbove ?? ""} onChange={(e) => setEdit({ ...edit, freeAbove: numOrNull(e.target.value) })} /></Field>
+            <div className="rounded-[4px] border border-line bg-surface-2 p-3 text-[12.5px] text-ink-2">
+              Clients in {edit.name || "this zone"} pay {edit.standard ? money(edit.standard) : "nothing"} for standard delivery{edit.express !== null ? ` or ${money(edit.express)} for express` : ""}{edit.freeAbove !== null ? `, free over ${money(edit.freeAbove)}` : ""}. Arrives in {edit.days || "?"} days with {edit.carrier}.
+            </div>
+          </div>
+        )}
+      </Drawer>
+      <Confirm open={!!del} onClose={() => setDel(null)} onConfirm={() => { if (del) { update({ zones: zones.filter((z) => z.id !== del.id) }); toast(`${del.name} zone deleted`); } }} title={`Delete ${del?.name}?`} body="Clients in these regions will not be able to check out until another zone covers them." confirmLabel="Delete zone" danger />
     </>
   );
 }
@@ -461,16 +510,16 @@ export function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" />
-      <div className="grid gap-6 lg:grid-cols-[210px_1fr]">
-        <nav aria-label="Settings sections" className="-mx-4 flex gap-1 overflow-x-auto px-4 lg:mx-0 lg:flex-col lg:px-0">
+      <PageHeader title={tabs.find(([k]) => k === key)![1]} back={{ to: "/settings/store", label: "Settings" }} />
+      <div className="grid gap-5">
+        <nav aria-label="Settings sections" className="-mx-4 flex gap-1 overflow-x-auto px-4 lg:hidden">
           {tabs.map(([k, label]) => (
             <NavLink key={k} to={`/settings/${k}`} className={({ isActive }) => cx("relative shrink-0 rounded-[4px] px-3 py-2 text-[13px] transition-colors", isActive ? "bg-surface font-semibold text-ink ring-1 ring-line" : "text-muted hover:text-ink")}>
               {label}
             </NavLink>
           ))}
         </nav>
-        <div key={key} className="min-w-0 max-w-4xl">{view[key]}</div>
+        <div key={key} className="min-w-0 max-w-5xl">{view[key]}</div>
       </div>
     </>
   );
